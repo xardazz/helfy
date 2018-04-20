@@ -9,7 +9,7 @@ public class Interpreter {
     private static final long _buffer_limit = code + jvm.type("StubQueue").offset("_buffer_limit");
 
     public static boolean contains(long pc) {
-        long offset = pc - jvm.getAddress((int) _stub_buffer);
+        long offset = pc - jvm.getAddress(_stub_buffer);
         return 0 <= offset && offset < jvm.getInt(_buffer_limit);
     }
 }

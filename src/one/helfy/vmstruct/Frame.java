@@ -41,11 +41,11 @@ public class Frame {
     }
 
     public long at(int slot) {
-        return jvm.getAddress(fp + slot * 8);
+        return jvm.getAddress(fp + slot * wordSize);
     }
 
     public long local(int index) {
-        return jvm.getAddress(at(slot_interp_locals) - index * 8);
+        return jvm.getAddress(at(slot_interp_locals) - index * wordSize);
     }
 
     public int bci() {
@@ -81,8 +81,8 @@ public class Frame {
         if (cb != 0) {
             long senderSP = unextendedSP + jvm.getInt(cb + _frame_size);
             if (senderSP != sp) {
-                long senderPC = jvm.getAddress(senderSP - slot_return_addr * 8);
-                long savedFP = jvm.getAddress(senderSP - slot_sender_sp * 8);
+                long senderPC = jvm.getAddress(senderSP - slot_return_addr * wordSize);
+                long savedFP = jvm.getAddress(senderSP - slot_sender_sp * wordSize);
                 return new Frame(senderSP, savedFP, senderPC);
             }
         }
