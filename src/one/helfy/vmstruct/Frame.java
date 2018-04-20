@@ -123,6 +123,9 @@ public class Frame {
                         if ((i + 1) < maxLocals) {
                             valAsText += "; slot " + (i + 1) + " -> " + String.valueOf(local(i + 1));
                         }
+                    } else {
+                        long secondPart = local(i + 1);
+                        valAsText = String.valueOf(localVarVal & 0xffffffffL + ((secondPart << 32) & 0xffffffff00000000L));
                     }
                     skipNext = true;
                 } else if (vars[i].type.equals("double")) {
