@@ -13,9 +13,18 @@ import java.util.TreeSet;
 
 public class JVM {
     public static final Unsafe unsafe = getUnsafe();
+    private static JVM _instance;
 
     private final Map<String, Type> types = new LinkedHashMap<>();
     private final Map<String, Number> constants = new LinkedHashMap<>();
+
+    public static final JVM getInstance() {
+        if (_instance == null) {
+            // if it will be initialized more than once it's ok as it's not very expensive operation
+            _instance = new JVM();
+        }
+        return _instance;
+    }
 
     public JVM() {
         readVmTypes(readVmStructs());
@@ -145,6 +154,14 @@ public class JVM {
     
     public void putAddress(long addr, long val) {
         unsafe.putAddress(addr, val);
+    }
+
+    public <T> T getObject(Object obj, long addr) {
+        return (T) unsafe.getObject(obj, addr);
+    }
+
+    public long fieldOffset(java.lang.reflect.Field field) {
+        return unsafe.objectFieldOffset(field);
     }
 
     public String getString(long addr) {
