@@ -118,24 +118,27 @@ public class Frame {
                     Object val = jvm.getObject(strRef, jvm.fieldOffset(ObjRef.ptrField));
                     valAsText = getArrayAsString(val, vars[i].valueType, vars[i].type);
                 } else if (vars[i].type.equals("long")) {
+                    // long values take 2 slots
+                    long secondPart = local(i + 1);
                     if (wordSize == 8) { // 64 bit
                         valAsText = "slot " + i + " -> " + String.valueOf(localVarVal);
-                        if ((i + 1) < maxLocals) {
-                            valAsText += "; slot " + (i + 1) + " -> " + String.valueOf(local(i + 1));
-                        }
+                        valAsText += "; slot " + (i + 1) + " -> " + String.valueOf(secondPart);
                     } else {
-                        long secondPart = local(i + 1);
-                        valAsText = String.valueOf(localVarVal & 0xffffffffL + ((secondPart << 32) & 0xffffffff00000000L));
+                        valAsText = String.valueOf((secondPart & 0xffffffffL) + ((localVarVal << 32L) & 0xffffffff00000000L));
                     }
                     skipNext = true;
                 } else if (vars[i].type.equals("double")) {
-                    valAsText = "slot " + i + " -> " + String.valueOf(Double.longBitsToDouble(localVarVal));
-                    if ((i + 1) < maxLocals) {
-                        valAsText += "; slot " + (i + 1) + " -> " + String.valueOf(Double.longBitsToDouble(local(i + 1)));
+                    // double values take 2 slots
+                    long secondPart = local(i + 1);
+                    if (wordSize == 8) {
+                        valAsText = "slot " + i + " -> " + String.valueOf(Double.longBitsToDouble(localVarVal));
+                        valAsText += "; slot " + (i + 1) + " -> " + String.valueOf(Double.longBitsToDouble(secondPart));
+                    } else {
+                        valAsText = String.valueOf(Double.longBitsToDouble((secondPart & 0xffffffffL) + ((localVarVal << 32L) & 0xffffffff00000000L)));
                     }
                     skipNext = true;
                 } else if (vars[i].type.equals("char")) {
-                    valAsText = Character.toString((char) localVarVal);
+                    valAsText = localVarVal + " '" + Character.toString((char) localVarVal) + "'";
                 } else if (vars[i].type.equals("float")) {
                     valAsText = String.valueOf(Float.intBitsToFloat((int) localVarVal));
                 }
