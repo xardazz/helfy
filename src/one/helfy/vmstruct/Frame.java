@@ -74,7 +74,7 @@ public class Frame {
 
     public Frame sender() {
         if (Interpreter.contains(pc)) {
-            return new Frame(fp + slot_sender_sp * 8, at(slot_interp_sender_sp), at(slot_link), at(slot_return_addr));
+            return new Frame(fp + slot_sender_sp * wordSize, at(slot_interp_sender_sp), at(slot_link), at(slot_return_addr));
         }
 
         long cb = CodeCache.findBlob(pc);
