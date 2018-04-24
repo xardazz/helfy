@@ -150,7 +150,7 @@ public class Frame {
         }
     }
 
-    private String getArrayAsString(Object val, boolean valueType, String type) {
+    public static String getArrayAsString(Object val, boolean valueType, String type) {
         if (val == null) {
             return "null";
         }
@@ -178,6 +178,65 @@ public class Frame {
             default:
                 return "unknown";
         }
+    }
+
+    public ExportedFrame export() {
+        long method = method();
+        int maxLocals = Method.maxLocals(method);
+        Method.LocalVar[] vars = Method.getLocalVars(method);
+        return new ExportedFrame(method, vars, getLocalsWithValues(maxLocals, vars));
+    }
+
+    private Object[] getLocalsWithValues(int maxLocals, Method.LocalVar[] vars) {
+        Object[] varValues = new Object[maxLocals];
+        for (int i = 0; i < maxLocals; i++) {
+            long localVarVal = local(i);
+            boolean skipNext = false;
+            if (vars.length > 0 && vars[i] != null) {
+                if (vars[i].type.equals("long") || vars[i].type.equals("double")) {
+                    long secondPart = local(i + 1);
+                    varValues[i] = exportLocalVarValue(vars[i], localVarVal, secondPart);
+                    varValues[i + 1] = varValues[i];
+                    skipNext = true;
+                } else {
+                    varValues[i] = exportLocalVarValue(vars[i], localVarVal, 0);
+                }
+            } else {
+                varValues[i] = localVarVal;
+            }
+            if (skipNext) i++;
+        }
+        return varValues;
+    }
+
+    private Object exportLocalVarValue(Method.LocalVar localVar, long localVarVal, long slot2) {
+        Object result;
+        if (!localVar.valueType) {
+            ObjRef strRef = new ObjRef();
+            strRef.ptr = (int) ((localVarVal - _narrow_oop_base) >> _narrow_oop_shift);
+            result = jvm.getObject(strRef, jvm.fieldOffset(ObjRef.ptrField));
+        } else if (localVar.type.equals("long")) {
+            // long values take 2 slots
+            if (wordSize == 8) { // 64 bit
+                result = slot2; // though it's stated to be implementation specific, usually real long valueis in second slot
+            } else {
+                result = (slot2 & 0xffffffffL) + ((localVarVal << 32L) & 0xffffffff00000000L);
+            }
+        } else if (localVar.type.equals("double")) {
+            // double values take 2 slots
+            if (wordSize == 8) {
+                result = Double.longBitsToDouble(slot2);
+            } else {
+                result = Double.longBitsToDouble((slot2 & 0xffffffffL) + ((localVarVal << 32L) & 0xffffffff00000000L));
+            }
+        } else if (localVar.type.equals("char")) {
+            result = (char) localVarVal;
+        } else if (localVar.type.equals("float")) {
+            result = Float.intBitsToFloat((int) localVarVal);
+        } else {
+            result = localVarVal;
+        }
+        return result;
     }
 
     public void dump(PrintStream out) {
@@ -208,5 +267,53 @@ public class Frame {
             }
         }
         int ptr;
+    }
+
+    public static class ExportedFrame {
+        private final long method;
+        private final Method.LocalVar[] localVars;
+        private final Object[] localVarValues;
+
+        public ExportedFrame(long method, Method.LocalVar[] localVars, Object[] localVarValues) {
+            this.method = method;
+            this.localVars = localVars;
+            this.localVarValues = localVarValues;
+        }
+
+        public long getMethod() {
+            return method;
+        }
+
+        public Method.LocalVar[] getLocalVars() {
+            return localVars;
+        }
+
+        public Object[] getLocalVarValues() {
+            return localVarValues;
+        }
+
+        public void dump(PrintStream ps) {
+            if (localVarValues == null) {
+                return;
+            }
+            for (int i = 0; i < localVarValues.length; i++) {
+                Object localVarValue = localVarValues[i];
+                String valAsText = "\t[" + i + "]\t";
+                if (localVars.length > 0) {
+                    valAsText += localVars[i].name + " (" + localVars[i].type + ")\t";
+                    if (localVars[i].isArray) {
+                        valAsText += getArrayAsString(localVarValue, localVars[i].valueType, localVars[i].type);
+                    } else if (localVars[i].type.equals("long") || localVars[i].type.equals("double")) {
+                        valAsText += String.valueOf(localVarValue);
+                        i++;
+                    } else {
+                        valAsText += String.valueOf(localVarValue);
+                    }
+                } else {
+                    valAsText += "<na>\t" + String.valueOf(localVarValue);
+                }
+                ps.println(valAsText);
+            }
+        }
     }
 }

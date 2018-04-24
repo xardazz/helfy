@@ -3,6 +3,8 @@ package one.helfy;
 import one.helfy.vmstruct.Frame;
 import one.helfy.vmstruct.JavaThread;
 
+import java.util.concurrent.ExecutionException;
+
 
 public class StackTrace {
 
@@ -41,7 +43,9 @@ public class StackTrace {
         }.startAndWait();
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws ExecutionException, InterruptedException {
         testDifferentParams();
+        int b = 9;
+        VMThreadCache.currentFrame().dump(System.out);
     }
 }

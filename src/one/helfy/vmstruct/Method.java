@@ -30,6 +30,9 @@ public class Method {
     private static final long localVarSlotOffset = jvm.type("LocalVariableTableElement").field("slot").offset;
 
     public static String name(long method) {
+        if (method == 0) {
+            return "unknown";
+        }
         long constMethod = jvm.getAddress(method + _constMethod);
         long cpool = jvm.getAddress(constMethod + _constants);
         int index = jvm.getShort(constMethod + _name_index) & 0xffff;
@@ -227,7 +230,7 @@ public class Method {
         return (int) (bcp - constMethod - _constMethod_size);
     }
 
-    static class LocalVar {
+    public static class LocalVar {
         final String name;
         final String type;
         final boolean isArray;
@@ -238,6 +241,22 @@ public class Method {
             this.type = type;
             this.isArray = isArray;
             this.valueType = valueType;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public boolean isArray() {
+            return isArray;
+        }
+
+        public boolean isValueType() {
+            return valueType;
         }
     }
 }
