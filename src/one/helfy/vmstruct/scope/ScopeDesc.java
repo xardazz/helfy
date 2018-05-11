@@ -17,6 +17,7 @@ public class ScopeDesc {
     private final int methodOffset;
     private final int senderOffset;
     private final int localsOffset;
+    private final int bci;
 
     public ScopeDesc(long nmethod, long pcdesc) {
         this(nmethod, pcdesc, true);
@@ -28,7 +29,7 @@ public class ScopeDesc {
         CompressedReadStream crs = new CompressedReadStream(NMethod.getScopesDataBegin(nmethod), scopeDesc);
         senderOffset = crs.readInt();
         methodOffset = crs.readInt();
-        int bci = crs.readInt(); // actually we should add original bci to it
+        bci = crs.readInt(); // non-corrected bci
         localsOffset = crs.readInt();
         int expressionsDecodeOffset = crs.readInt();
         int monitorsDecodeOffset = crs.readInt();
@@ -39,6 +40,10 @@ public class ScopeDesc {
             return null;
         }
         return new ScopeDesc(nmethod, senderOffset, false);
+    }
+
+    public int bci() {
+        return bci;
     }
 
     public long method() {

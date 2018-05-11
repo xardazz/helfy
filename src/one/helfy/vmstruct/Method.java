@@ -26,6 +26,8 @@ public class Method {
     private static final int checkedExceptionElementSize = jvm.type("CheckedExceptionElement").size;
     private static final int localVariableTableElementSize = jvm.type("LocalVariableTableElement").size;
     private static final long localVarNameOffset = jvm.type("LocalVariableTableElement").field("name_cp_index").offset;
+    private static final long localVarBCIOffset = jvm.type("LocalVariableTableElement").field("start_bci").offset;
+    private static final long localVarLength = jvm.type("LocalVariableTableElement").field("length").offset;
     private static final long localVarDescriptorOffset = jvm.type("LocalVariableTableElement").field("descriptor_cp_index").offset;
     private static final long localVarSlotOffset = jvm.type("LocalVariableTableElement").field("slot").offset;
 
@@ -140,7 +142,7 @@ public class Method {
         return offset;
     }
 
-    public static LocalVar[] getLocalVars(long method) {
+    public static LocalVar[] getLocalVars(long method, int frameBCI) {
         long constMethod = jvm.getAddress(method + _constMethod);
         long flags = jvm.getShort(constMethod + _flags) & 0xffff;
         if (!hasLocalVariableTable(flags)) {
@@ -168,6 +170,11 @@ public class Method {
         for (int j = 0; j < length; j++) {
             int typeOffset = jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarDescriptorOffset) & 0xffff;
             int nameOffset = jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarNameOffset) & 0xffff;
+            int bciStart = jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarBCIOffset) & 0xffff;
+            int bciEnd = bciStart + jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarLength) & 0xffff;
+            if (frameBCI < bciStart || frameBCI >= bciEnd) {
+                continue;
+            }
             int slot = jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarSlotOffset) & 0xffff;
             if (slot >= result.length) {
                 LocalVar[] tmp = new LocalVar[slot + 1];

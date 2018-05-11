@@ -126,6 +126,19 @@ public class Frame {
     }
 
     protected Frame getNextRealFrame(long cb) {
+        /*
+                Address senderSP = this.getUnextendedSP().addOffsetTo(cb.getFrameSize());
+        Address senderPC = senderSP.getAddressAt(-1L * VM.getVM().getAddressSize());
+        Address savedFPAddr = senderSP.addOffsetTo(-2L * VM.getVM().getAddressSize());
+        if (map.getUpdateMap()) {
+            map.setIncludeArgumentOops(cb.callerMustGCArguments());
+            if (cb.getOopMaps() != null) {
+                OopMapSet.updateRegisterMap(this, cb, map, true);
+            }
+
+            this.updateMapWithSavedLink(map, savedFPAddr);
+        }
+         */
         long senderSP = unextendedSP + jvm.getInt(cb + _frame_size) * wordSize;
         if (senderSP != sp) {
             long senderPC = jvm.getAddress(senderSP - slot_return_addr * wordSize);
@@ -145,49 +158,50 @@ public class Frame {
 
     public void dumpLocals(PrintStream out, long method) {
         int maxLocals = Method.maxLocals(method);
-        Method.LocalVar[] vars = Method.getLocalVars(method);
+        Method.LocalVar[] vars = Method.getLocalVars(method, bci());
         for (int i = 0; i < maxLocals; i++) {
             long localVarVal = local(i);
             boolean skipNext = false;
             String valAsText = null;
-            if (vars.length > 0 && vars[i] != null) {
-                if (!vars[i].valueType && !vars[i].isArray) {
+            Method.LocalVar localVar = vars.length > 0 && i < vars.length ? vars[i] : null;
+            if (localVar != null) {
+                if (!localVar.valueType && !localVar.isArray) {
                     JVM.ObjRef strRef = new JVM.ObjRef();
                     // if we have -XX:-UseCompressedOops specified base and offset will be 0
                     strRef.ptr = (int) ((localVarVal - _narrow_oop_base) >> _narrow_oop_shift);
                     Object val = jvm.getObject(strRef, jvm.fieldOffset(JVM.ObjRef.ptrField));
                     valAsText = val != null ? val.toString() : "null";
-                } else if (vars[i].isArray) {
+                } else if (localVar.isArray) {
                     JVM.ObjRef strRef = new JVM.ObjRef();
                     strRef.ptr = (int) ((localVarVal - _narrow_oop_base) >> _narrow_oop_shift);
                     Object val = jvm.getObject(strRef, jvm.fieldOffset(JVM.ObjRef.ptrField));
                     valAsText = Utils.getArrayAsString(val, vars[i].valueType, vars[i].type);
-                } else if (vars[i].type.equals("long")) {
+                } else if (localVar.type.equals("long")) {
                     // long values take 2 slots
                     long secondPart = local(i + 1);
                     if (wordSize == 8) { // 64 bit
-                        valAsText = localVarVal != 0 ? String.valueOf(localVarVal) : String.valueOf(secondPart);
+                        valAsText = String.valueOf(secondPart);
                     } else {
                         valAsText = String.valueOf((secondPart & 0xffffffffL) + ((localVarVal << 32L) & 0xffffffff00000000L));
                     }
                     skipNext = true;
-                } else if (vars[i].type.equals("double")) {
+                } else if (localVar.type.equals("double")) {
                     // double values take 2 slots
                     long secondPart = local(i + 1);
                     if (wordSize == 8) {
-                        valAsText = localVarVal != 0 ? String.valueOf(Double.longBitsToDouble(localVarVal)) : String.valueOf(Double.longBitsToDouble(secondPart));
+                        valAsText = String.valueOf(Double.longBitsToDouble(secondPart));
                     } else {
                         valAsText = String.valueOf(Double.longBitsToDouble((secondPart & 0xffffffffL) + ((localVarVal << 32L) & 0xffffffff00000000L)));
                     }
                     skipNext = true;
-                } else if (vars[i].type.equals("char")) {
+                } else if (localVar.type.equals("char")) {
                     valAsText = localVarVal + " '" + Character.toString((char) localVarVal) + "'";
-                } else if (vars[i].type.equals("float")) {
+                } else if (localVar.type.equals("float")) {
                     valAsText = String.valueOf(Float.intBitsToFloat((int) localVarVal));
                 }
             }
             valAsText = valAsText == null ? valueAsText(localVarVal) : valAsText;
-            String varName = vars.length > 0 && vars[i] != null ? vars[i].name + " (" + vars[i].type + ")" : "<na>";
+            String varName = localVar != null ? localVar.name + " (" + localVar.type + ")" : "<na>";
             out.println("\t  [" + i + "] \t" + varName + " \t" + valAsText);
             if (skipNext) i++;
         }
@@ -197,7 +211,7 @@ public class Frame {
     public ExportedFrame export() {
         long method = method();
         int maxLocals = Method.maxLocals(method);
-        Method.LocalVar[] vars = Method.getLocalVars(method);
+        Method.LocalVar[] vars = Method.getLocalVars(method, bci());
         return new ExportedFrame(method, vars, getLocalsWithValues(maxLocals, vars));
     }
 

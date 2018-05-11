@@ -78,7 +78,7 @@ public class Location {
         return (short)((this.value & OFFSET_MASK) >> OFFSET_SHIFT);
     }
 
-    public Object toObject(long unextendedSP) {
+    public Object toObject(long unextendedSP, long fp) {
         Where where = getWhere();
         int type = (this.value & TYPE_MASK) >> TYPE_SHIFT;
         if (where == Where.ON_STACK) {
@@ -102,7 +102,31 @@ public class Location {
             } else if (type == TYPE_LNG || type == TYPE_INT_IN_LONG) {
                 return jvm.getLong(unextendedSP + 4 * getOffset());
             }
+        } else {
+            if (getOffset() == 10) { // todo check address size and get real rbp
+                if (type == TYPE_OOP) {
+                    System.err.println("WOW REGISTER");
+                    long objAddr = fp;
+                    JVM.ObjRef objRef = new JVM.ObjRef();
+                    objRef.ptr = (int) ((objAddr - _narrow_oop_base) >> _narrow_oop_shift);
+                    return jvm.getObject(objRef, jvm.fieldOffset(JVM.ObjRef.ptrField));
+                }
+            }
         }
+        // todo OopMapSet, X86Frame#senderForCompiledFrame, CodeBlob#getOopMaps
+        /*
+                Address senderSP = this.getUnextendedSP().addOffsetTo(cb.getFrameSize());
+        Address senderPC = senderSP.getAddressAt(-1L * VM.getVM().getAddressSize());
+        Address savedFPAddr = senderSP.addOffsetTo(-2L * VM.getVM().getAddressSize());
+        if (map.getUpdateMap()) {
+            map.setIncludeArgumentOops(cb.callerMustGCArguments());
+            if (cb.getOopMaps() != null) {
+                OopMapSet.updateRegisterMap(this, cb, map, true);
+            }
+
+            this.updateMapWithSavedLink(map, savedFPAddr);
+        }
+         */
         return toString();
     }
 

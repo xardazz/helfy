@@ -13,6 +13,8 @@ import java.util.List;
  * @date 26.04.2018
  */
 public class VFrame extends Frame {
+    private static int InvocationEntryBci = jvm.intConstant("InvocationEntryBci");
+
     public VFrame(long sp, long unextendedSp, long fp, long pc, ScopeDesc scopeDesc) {
         super(sp, unextendedSp, fp, pc, scopeDesc);
     }
@@ -25,6 +27,10 @@ public class VFrame extends Frame {
 //    public long local(int index) {
 //
 //    }
+    @Override
+    public int bci() {
+        return scopeDesc.bci() + InvocationEntryBci;
+    }
 
     @Override
     public long method() {
@@ -51,7 +57,7 @@ public class VFrame extends Frame {
     @Override
     public void dumpLocals(PrintStream out, long method) {
         int maxLocals = Method.maxLocals(method);
-        Method.LocalVar[] vars = Method.getLocalVars(method);
+        Method.LocalVar[] vars = Method.getLocalVars(method, bci());
         List<Object> localValues = scopeDesc.locals();
         out.println("Total values: " + localValues.size());
         for (int i = 0; i < maxLocals; i++) {
@@ -63,22 +69,27 @@ public class VFrame extends Frame {
             if (localVal == null) {
                 strVal = "null";
             } else if (localVal instanceof Location) {
-                Object obj = ((Location) localVal).toObject(unextendedSP);
+                Object obj = ((Location) localVal).toObject(unextendedSP, fp);
                 Object secondPart = null;
                 if (longOrDouble) {
                     skipNext = true;
                     // if one part of long or double is location, second part will also be location
                     Location secondPartLocation = (Location) localValues.get(i + 1);
-                    secondPart = secondPartLocation.toObject(unextendedSP);
+                    secondPart = secondPartLocation.toObject(unextendedSP, fp);
                 }
                 strVal = compiledVar2String(obj, localVar, secondPart);
             } else if (localVal instanceof Integer) {
                 Object secondPart = null;
                 if (localVar != null && localVal.equals(0) && longOrDouble) {
                     skipNext = true;
-                    // if one part of long or double is 0 int, second part will be location
-                    Location secondPartLocation = (Location) localValues.get(i + 1);
-                    secondPart = secondPartLocation.toObject(unextendedSP);
+                    // if one part of long or double is 0 int, second part will be location or long
+                    Object secondPartRaw = localValues.get(i + 1);
+                    if (secondPartRaw instanceof Location) {
+                        Location secondPartLocation = (Location) secondPartRaw;
+                        secondPart = secondPartLocation.toObject(unextendedSP, fp);
+                    } else {
+                        secondPart = secondPartRaw;
+                    }
                 }
                 strVal = compiledVar2String(0, localVar, secondPart);
             } else {

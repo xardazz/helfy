@@ -27,17 +27,24 @@ public class StackTrace {
     }
 
     public static void dumpCurrentThread() {
+        long abc = 909L;
         new Thread("StackTrace getter") {
             final Thread caller = Thread.currentThread();
+            final long abc1 = abc;
 
             @Override
             public synchronized void run() {
+                System.out.println(String.valueOf(abc1));
                 dumpThread(caller);
             }
 
             synchronized void startAndWait() {
+                int cde1 = (int) abc;
+                cde1++;
                 try {
                     start();
+                    int cde = (int) abc;
+                    cde++;
                     join();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
