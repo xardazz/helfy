@@ -237,4 +237,16 @@ public class JVM {
             throw new JVMException("Unable to get Unsafe", e);
         }
     }
+
+    public static class ObjRef {
+        public static java.lang.reflect.Field ptrField;
+        static {
+            try {
+                ptrField = ObjRef.class.getDeclaredField("ptr");
+            } catch (NoSuchFieldException e) {
+                throw new JVMException("Couldn't obtain ptr field of own class");
+            }
+        }
+        public int ptr;
+    }
 }

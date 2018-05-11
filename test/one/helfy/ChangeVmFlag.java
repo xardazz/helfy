@@ -39,7 +39,7 @@ public class ChangeVmFlag {
             long flagValueAddress = jvm.getAddress(flagAddress +  _addrField.offset);
             long flagNameAddress = jvm.getAddress(flagAddress + _nameField.offset);
             String flagName = jvm.getString(flagNameAddress);
-            
+            System.err.println(flagName + " = " + jvm.getByte(flagValueAddress));
             if ("UnlockDiagnosticVMOptions".equals(flagName)) {
                 if (jvm.getByte(flagValueAddress) == 0) {
                     jvm.putByte(flagValueAddress, (byte) 1);

@@ -2,17 +2,24 @@ package one.helfy.vmstruct;
 
 import one.helfy.JVM;
 import one.helfy.JVMException;
+import one.helfy.Utils;
+import one.helfy.vmstruct.scope.PCDesc;
+import one.helfy.vmstruct.scope.ScopeDesc;
+import sun.jvm.hotspot.code.CodeBlob;
 
 import java.io.PrintStream;
 import java.lang.reflect.Field;
 import java.util.Arrays;
 
 public class Frame {
-    private static final JVM jvm = JVM.getInstance();
-    private static final int wordSize = jvm.intConstant("oopSize");
+    protected static final JVM jvm = JVM.getInstance();
+    protected static final int wordSize = jvm.intConstant("oopSize");
+    private static final String addressFormat = "0000000000000000".substring(0, wordSize * 2);
     private static final long _name = jvm.type("CodeBlob").offset("_name");
     private static final long _frame_size = jvm.type("CodeBlob").offset("_frame_size");
     private static final long _method = jvm.type("nmethod").offset("_method");
+    private static final long _scope_desc_start = jvm.type("nmethod").offset("_scopes_data_offset");
+    private static final long _scopes_pcs_offset = jvm.type("nmethod").offset("_scopes_pcs_offset");
     private static final long _narrow_oop_base = jvm.getAddress(jvm.type("Universe").global("_narrow_oop._base"));
     private static final int _narrow_oop_shift = jvm.getInt(jvm.type("Universe").global("_narrow_oop._shift"));
 
@@ -24,20 +31,49 @@ public class Frame {
     private static final int slot_return_addr = 1;
     private static final int slot_sender_sp = 2;
 
-    private final long sp;
-    private final long unextendedSP;
-    private final long fp;
-    private final long pc;
+    protected final long sp;
+    protected final long unextendedSP;
+    protected final long fp;
+    protected final long pc;
+    protected final long cb;
+    protected final ScopeDesc scopeDesc;
+    protected final boolean isCompiled;
 
     public Frame(long sp, long fp, long pc) {
         this(sp, sp, fp, pc);
     }
 
     public Frame(long sp, long unextendedSP, long fp, long pc) {
+        this(sp, unextendedSP, fp, pc, null);
+    }
+
+    public Frame(long sp, long unextendedSP, long fp, long pc, ScopeDesc scopeDesc) {
         this.sp = sp;
         this.unextendedSP = unextendedSP;
         this.fp = fp;
         this.pc = pc;
+        if (scopeDesc != null) {
+            this.cb = scopeDesc.nmethod();
+            this.scopeDesc = scopeDesc;
+            this.isCompiled = true;
+        } else if (Interpreter.contains(pc)) {
+            this.cb = 0;
+            this.scopeDesc = null;
+            this.isCompiled = false;
+        } else {
+            this.cb = CodeCache.findBlob(pc);
+            if (cb != 0) {
+                String name = jvm.getStringRef(cb + _name);
+                if (name.endsWith("nmethod")) {
+                    this.scopeDesc = PCDesc.getPCDescAt(pc, cb);
+                } else {
+                    this.scopeDesc = null;
+                }
+            } else {
+                this.scopeDesc = null;
+            }
+            this.isCompiled = true;
+        }
     }
 
     public long at(int slot) {
@@ -57,11 +93,10 @@ public class Frame {
     }
 
     public long method() {
-        if (Interpreter.contains(pc)) {
+        if (!isCompiled) {
             return at(slot_interp_method);
         }
 
-        long cb = CodeCache.findBlob(pc);
         if (cb != 0) {
             String name = jvm.getStringRef(cb + _name);
             if (name.endsWith("nmethod")) {
@@ -73,20 +108,30 @@ public class Frame {
     }
 
     public Frame sender() {
-        if (Interpreter.contains(pc)) {
+        if (!isCompiled) {
             return new Frame(fp + slot_sender_sp * wordSize, at(slot_interp_sender_sp), at(slot_link), at(slot_return_addr));
         }
 
-        long cb = CodeCache.findBlob(pc);
         if (cb != 0) {
-            long senderSP = unextendedSP + jvm.getInt(cb + _frame_size);
-            if (senderSP != sp) {
-                long senderPC = jvm.getAddress(senderSP - slot_return_addr * wordSize);
-                long savedFP = jvm.getAddress(senderSP - slot_sender_sp * wordSize);
-                return new Frame(senderSP, savedFP, senderPC);
+            if (this.scopeDesc != null) {
+                ScopeDesc sender = this.scopeDesc.sender();
+                if (sender != null) {
+                    return new VFrame(this, sender);
+                }
             }
+            return getNextRealFrame(cb);
         }
 
+        return null;
+    }
+
+    protected Frame getNextRealFrame(long cb) {
+        long senderSP = unextendedSP + jvm.getInt(cb + _frame_size) * wordSize;
+        if (senderSP != sp) {
+            long senderPC = jvm.getAddress(senderSP - slot_return_addr * wordSize);
+            long savedFP = jvm.getAddress(senderSP - slot_sender_sp * wordSize);
+            return new Frame(senderSP, savedFP, senderPC);
+        }
         return null;
     }
 
@@ -107,22 +152,21 @@ public class Frame {
             String valAsText = null;
             if (vars.length > 0 && vars[i] != null) {
                 if (!vars[i].valueType && !vars[i].isArray) {
-                    ObjRef strRef = new ObjRef();
+                    JVM.ObjRef strRef = new JVM.ObjRef();
                     // if we have -XX:-UseCompressedOops specified base and offset will be 0
                     strRef.ptr = (int) ((localVarVal - _narrow_oop_base) >> _narrow_oop_shift);
-                    Object val = jvm.getObject(strRef, jvm.fieldOffset(ObjRef.ptrField));
+                    Object val = jvm.getObject(strRef, jvm.fieldOffset(JVM.ObjRef.ptrField));
                     valAsText = val != null ? val.toString() : "null";
                 } else if (vars[i].isArray) {
-                    ObjRef strRef = new ObjRef();
+                    JVM.ObjRef strRef = new JVM.ObjRef();
                     strRef.ptr = (int) ((localVarVal - _narrow_oop_base) >> _narrow_oop_shift);
-                    Object val = jvm.getObject(strRef, jvm.fieldOffset(ObjRef.ptrField));
-                    valAsText = getArrayAsString(val, vars[i].valueType, vars[i].type);
+                    Object val = jvm.getObject(strRef, jvm.fieldOffset(JVM.ObjRef.ptrField));
+                    valAsText = Utils.getArrayAsString(val, vars[i].valueType, vars[i].type);
                 } else if (vars[i].type.equals("long")) {
                     // long values take 2 slots
                     long secondPart = local(i + 1);
                     if (wordSize == 8) { // 64 bit
-                        valAsText = "slot " + i + " -> " + String.valueOf(localVarVal);
-                        valAsText += "; slot " + (i + 1) + " -> " + String.valueOf(secondPart);
+                        valAsText = localVarVal != 0 ? String.valueOf(localVarVal) : String.valueOf(secondPart);
                     } else {
                         valAsText = String.valueOf((secondPart & 0xffffffffL) + ((localVarVal << 32L) & 0xffffffff00000000L));
                     }
@@ -131,8 +175,7 @@ public class Frame {
                     // double values take 2 slots
                     long secondPart = local(i + 1);
                     if (wordSize == 8) {
-                        valAsText = "slot " + i + " -> " + String.valueOf(Double.longBitsToDouble(localVarVal));
-                        valAsText += "; slot " + (i + 1) + " -> " + String.valueOf(Double.longBitsToDouble(secondPart));
+                        valAsText = localVarVal != 0 ? String.valueOf(Double.longBitsToDouble(localVarVal)) : String.valueOf(Double.longBitsToDouble(secondPart));
                     } else {
                         valAsText = String.valueOf(Double.longBitsToDouble((secondPart & 0xffffffffL) + ((localVarVal << 32L) & 0xffffffff00000000L)));
                     }
@@ -150,35 +193,6 @@ public class Frame {
         }
     }
 
-    public static String getArrayAsString(Object val, boolean valueType, String type) {
-        if (val == null) {
-            return "null";
-        }
-        if (!valueType) {
-            Object[] arrVal = (Object[]) val;
-            return Arrays.deepToString(arrVal);
-        }
-        switch (type) {
-            case "int[]":
-                return Arrays.toString((int[]) val);
-            case "long[]":
-                return Arrays.toString((long[]) val);
-            case "short[]":
-                return Arrays.toString((short[]) val);
-            case "byte[]":
-                return Arrays.toString((byte[]) val);
-            case "double[]":
-                return Arrays.toString((double[]) val);
-            case "float[]":
-                return Arrays.toString((float[]) val);
-            case "boolean[]":
-                return Arrays.toString((boolean[]) val);
-            case "char[]":
-                return Arrays.toString((char[]) val);
-            default:
-                return "unknown";
-        }
-    }
 
     public ExportedFrame export() {
         long method = method();
@@ -212,20 +226,20 @@ public class Frame {
     private Object exportLocalVarValue(Method.LocalVar localVar, long localVarVal, long slot2) {
         Object result;
         if (!localVar.valueType) {
-            ObjRef strRef = new ObjRef();
+            JVM.ObjRef strRef = new JVM.ObjRef();
             strRef.ptr = (int) ((localVarVal - _narrow_oop_base) >> _narrow_oop_shift);
-            result = jvm.getObject(strRef, jvm.fieldOffset(ObjRef.ptrField));
+            result = jvm.getObject(strRef, jvm.fieldOffset(JVM.ObjRef.ptrField));
         } else if (localVar.type.equals("long")) {
             // long values take 2 slots
             if (wordSize == 8) { // 64 bit
-                result = slot2; // though it's stated to be implementation specific, usually real long valueis in second slot
+                result = localVarVal != 0 ? localVarVal : slot2;
             } else {
                 result = (slot2 & 0xffffffffL) + ((localVarVal << 32L) & 0xffffffff00000000L);
             }
         } else if (localVar.type.equals("double")) {
             // double values take 2 slots
             if (wordSize == 8) {
-                result = Double.longBitsToDouble(slot2);
+                result = localVarVal != 0 ? Double.longBitsToDouble(localVarVal) : Double.longBitsToDouble(slot2);
             } else {
                 result = Double.longBitsToDouble((slot2 & 0xffffffffL) + ((localVarVal << 32L) & 0xffffffff00000000L));
             }
@@ -241,32 +255,34 @@ public class Frame {
 
     public void dump(PrintStream out) {
         long method = method();
+
         if (method == 0) {
+            if (StubRoutines.returnsToCallStub(pc)) {
+                String hexString = hexString(pc);
+                out.println("\tat StubRoutines [" + hexString + "]");
+            }
             return;
         }
 
-        if (Interpreter.contains(pc)) {
+        if (!isCompiled) {
             out.println("\tat " + Method.name(method) + " @ " + bci());
             dumpLocals(out, method);
             return;
         }
 
-        long cb = CodeCache.findBlob(pc);
         if (cb != 0) {
-            out.println("[compiled] " + Method.name(method));
+            if (scopeDesc != null) {
+                new VFrame(this, scopeDesc).dump(out);
+            } else {
+                out.println("\tat " + Method.name(method) + " [compiled]");
+            }
         }
     }
 
-    private static class ObjRef {
-        private static Field ptrField;
-        static {
-            try {
-                ptrField = ObjRef.class.getDeclaredField("ptr");
-            } catch (NoSuchFieldException e) {
-                throw new JVMException("Couldn't obtain ptr field of own class");
-            }
-        }
-        int ptr;
+    protected String hexString(long address) {
+        String hexString = Long.toHexString(address);
+        hexString = "0x" + addressFormat.substring(hexString.length()) + hexString;
+        return hexString;
     }
 
     public static class ExportedFrame {
@@ -302,7 +318,7 @@ public class Frame {
                 if (localVars.length > 0) {
                     valAsText += localVars[i].name + " (" + localVars[i].type + ")\t";
                     if (localVars[i].isArray) {
-                        valAsText += getArrayAsString(localVarValue, localVars[i].valueType, localVars[i].type);
+                        valAsText += Utils.getArrayAsString(localVarValue, localVars[i].valueType, localVars[i].type);
                     } else if (localVars[i].type.equals("long") || localVars[i].type.equals("double")) {
                         valAsText += String.valueOf(localVarValue);
                         i++;

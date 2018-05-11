@@ -15,11 +15,14 @@ public class StackTrace {
         }
     }
 
-    public static void testDifferentParams() {
-        testDifferentParams(1, new Thread[] {new Thread("unusedthread") }, 56L, new long[] {3L}, (short) 7, (byte) 4, 3.4, 5.6f, true, 'o', "test");
+    public static void testDifferentParams(int a) {
+        testDifferentParams(a, new Thread[] {new Thread("unusedthread") }, 56L, new long[] {3L}, (short) 7, (byte) 4, 3.4, 5.6f, true, 'o', "test");
     }
 
     public static void testDifferentParams(int a, Thread[] arr, long zzz, long[] b, short c, byte d, double e, float f, boolean g, char h, String i) {
+        for (int ppp = 0; ppp <= a; ppp++) {
+            System.out.print(i.substring(0, ppp % 3) + "-");
+        }
         dumpCurrentThread();
     }
 
@@ -44,7 +47,9 @@ public class StackTrace {
     }
 
     public static void main(String[] args) throws ExecutionException, InterruptedException {
-        testDifferentParams();
+        for (int i = 0; i < 1000; i++) {
+            testDifferentParams(i);
+        }
         int b = 9;
         VMThreadCache.currentFrame().dump(System.out);
     }
