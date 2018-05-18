@@ -1,32 +1,37 @@
 package one.helfy.vmstruct;
 
+import one.helfy.JVMException;
 import one.helfy.Utils;
 import one.helfy.vmstruct.scope.Location;
 import one.helfy.vmstruct.scope.ScopeDesc;
 
 import java.io.PrintStream;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author aleksei.gromov
  * @date 26.04.2018
  */
-public class VFrame extends Frame {
+public class VFrame extends X86Frame {
     private static int InvocationEntryBci = jvm.intConstant("InvocationEntryBci");
+    private final ScopeDesc scopeDesc;
 
-    public VFrame(long sp, long unextendedSp, long fp, long pc, ScopeDesc scopeDesc) {
-        super(sp, unextendedSp, fp, pc, scopeDesc);
+    public VFrame(long sp, long unextendedSp, long fp, long pc, Map<Integer, Long> registers, ScopeDesc scopeDesc) {
+        super(sp, unextendedSp, fp, pc, registers);
+        if (scopeDesc == null) {
+            throw new JVMException("Scope Desc can't be null for virtual frame!");
+        }
+        this.cb = scopeDesc.nmethod();
+        this.scopeDesc = scopeDesc;
     }
 
-    public VFrame(Frame frame, ScopeDesc scopeDesc) {
-        super(frame.sp, frame.unextendedSP, frame.fp, frame.pc, scopeDesc);
+    public VFrame(X86Frame frame, ScopeDesc scopeDesc) {
+        this(frame.sp, frame.unextendedSP, frame.fp, frame.pc, frame.registers, scopeDesc);
     }
-//
-//    @Override
-//    public long local(int index) {
-//
-//    }
+
     @Override
     public int bci() {
         return scopeDesc.bci() + InvocationEntryBci;
@@ -39,12 +44,15 @@ public class VFrame extends Frame {
     }
 
     @Override
-    public Frame sender() {
+    public X86Frame sender() {
         ScopeDesc sender = scopeDesc.sender();
         if (sender != null) {
-            return new VFrame(this.sp, this.unextendedSP, this.fp, this.pc, sender);
+            return new VFrame(this.sp, this.unextendedSP, this.fp, this.pc, this.registers, sender);
         }
-        return super.getNextRealFrame(scopeDesc.nmethod());
+        Map<Integer, Long> newRegisters = new HashMap<>(registers);
+        OopMapSet.updateRegisters(scopeDesc.nmethod(), pc, unextendedSP, newRegisters);
+        newRegisters.put(RBP, fp);
+        return super.getNextRealFrame(scopeDesc.nmethod(), newRegisters);
     }
 
     @Override
@@ -59,7 +67,7 @@ public class VFrame extends Frame {
         int maxLocals = Method.maxLocals(method);
         Method.LocalVar[] vars = Method.getLocalVars(method, bci());
         List<Object> localValues = scopeDesc.locals();
-        out.println("Total values: " + localValues.size());
+        //out.println("Total values: " + localValues.size());
         for (int i = 0; i < maxLocals; i++) {
             String strVal;
             Object localVal = localValues.get(i);
@@ -69,15 +77,17 @@ public class VFrame extends Frame {
             if (localVal == null) {
                 strVal = "null";
             } else if (localVal instanceof Location) {
-                Object obj = ((Location) localVal).toObject(unextendedSP, fp);
+                Location location = (Location) localVal;
+                Object obj = location.toObject(unextendedSP, registers);
                 Object secondPart = null;
                 if (longOrDouble) {
                     skipNext = true;
                     // if one part of long or double is location, second part will also be location
                     Location secondPartLocation = (Location) localValues.get(i + 1);
-                    secondPart = secondPartLocation.toObject(unextendedSP, fp);
+                    secondPart = secondPartLocation.toObject(unextendedSP, registers);
                 }
-                strVal = compiledVar2String(obj, localVar, secondPart);
+                strVal = compiledVar2String(obj, localVar, secondPart) +
+                        (location.isRegister() ? " in " + VMRegImpl.getRegisterName(location.getOffset()) : "");
             } else if (localVal instanceof Integer) {
                 Object secondPart = null;
                 if (localVar != null && localVal.equals(0) && longOrDouble) {
@@ -86,7 +96,7 @@ public class VFrame extends Frame {
                     Object secondPartRaw = localValues.get(i + 1);
                     if (secondPartRaw instanceof Location) {
                         Location secondPartLocation = (Location) secondPartRaw;
-                        secondPart = secondPartLocation.toObject(unextendedSP, fp);
+                        secondPart = secondPartLocation.toObject(unextendedSP, registers);
                     } else {
                         secondPart = secondPartRaw;
                     }
@@ -104,6 +114,9 @@ public class VFrame extends Frame {
     }
 
     private String compiledVar2String(Object obj, Method.LocalVar localVar, Object secondPart) {
+        if (obj == null) {
+            return "(invalid)";
+        }
         if (localVar != null) {
             if (localVar.isArray) {
                 return Utils.getArrayAsString(obj, localVar.valueType, localVar.type);

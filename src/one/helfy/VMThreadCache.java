@@ -1,6 +1,6 @@
 package one.helfy;
 
-import one.helfy.vmstruct.Frame;
+import one.helfy.vmstruct.X86Frame;
 import one.helfy.vmstruct.JavaThread;
 import one.helfy.vmstruct.Method;
 
@@ -31,15 +31,15 @@ public class VMThreadCache {
         return threadMap.computeIfAbsent(th, VMThread::of);
     }
 
-    public static Frame.ExportedFrame currentFrame() throws ExecutionException, InterruptedException {
+    public static X86Frame.ExportedFrame currentFrame() throws ExecutionException, InterruptedException {
         long curThread = current();
         Thread cur = Thread.currentThread();
-        Future<Frame.ExportedFrame> future = debuggingExecutor.submit(() -> {
+        Future<X86Frame.ExportedFrame> future = debuggingExecutor.submit(() -> {
             while (cur.getState() != Thread.State.WAITING) {
                 //Thread.sleep(1);
             }
             boolean stop = false;
-            for (Frame f = JavaThread.topFrame(curThread); f != null; f = f.sender()) {
+            for (X86Frame f = JavaThread.topFrame(curThread); f != null; f = f.sender()) {
                 if (stop) {
                     return f.export();
                 }

@@ -172,9 +172,6 @@ public class Method {
             int nameOffset = jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarNameOffset) & 0xffff;
             int bciStart = jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarBCIOffset) & 0xffff;
             int bciEnd = bciStart + jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarLength) & 0xffff;
-            if (frameBCI < bciStart || frameBCI >= bciEnd) {
-                continue;
-            }
             int slot = jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarSlotOffset) & 0xffff;
             if (slot >= result.length) {
                 LocalVar[] tmp = new LocalVar[slot + 1];
@@ -182,7 +179,9 @@ public class Method {
                 result = tmp;
             }
             String fieldName = Symbol.asString(ConstantPool.at(cpool, nameOffset));
-            result[slot] = vmLocalVar2Readable(fieldName, Symbol.asString(ConstantPool.at(cpool, typeOffset)));
+            if (result[slot] == null || (frameBCI >= bciStart && frameBCI < bciEnd)) {
+                result[slot] = vmLocalVar2Readable(fieldName, Symbol.asString(ConstantPool.at(cpool, typeOffset)));
+            }
         }
 
         return result;

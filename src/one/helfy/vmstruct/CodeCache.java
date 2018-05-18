@@ -12,6 +12,8 @@ public class CodeCache {
     private static final long _high = jvm.type("VirtualSpace").offset("_high");
     private static final long _heap_block_size = jvm.type("HeapBlock").size;
     private static final long _name = jvm.type("CodeBlob").offset("_name");
+    private static final long _content_offset = jvm.type("CodeBlob").offset("_content_offset");
+    private static final long _oop_maps = jvm.type("CodeBlob").offset("_oop_maps");
 
     public static boolean contains(long pc) {
         return jvm.getAddress(_memory + _low) <= pc && pc < jvm.getAddress(_memory + _high);
@@ -40,5 +42,22 @@ public class CodeCache {
 
         long heapBlock = codeHeapStart + (i << log2SegmentSize);
         return heapBlock + _heap_block_size;
+    }
+
+    public static long getOopMaps(long cb) {
+        return jvm.getAddress(cb + _oop_maps);
+    }
+
+    public static long getOopMapForReturnAddress(long cb, long retAddr) {
+        long oopMaps = getOopMaps(cb);
+        if (oopMaps == 0) {
+            return 0;
+        }
+        return OopMapSet.findMapAtOffset(oopMaps, retAddr - codeBegin(cb));
+        //return this.getOopMaps().findMapAtOffset(returnAddress.minus(this.codeBegin()), debugging);
+    }
+
+    public static long codeBegin(long cb) {
+        return cb + jvm.getInt(cb + _content_offset);
     }
 }

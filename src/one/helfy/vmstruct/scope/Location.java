@@ -2,6 +2,8 @@ package one.helfy.vmstruct.scope;
 
 import one.helfy.JVM;
 
+import java.util.Map;
+
 import static one.helfy.vmstruct.scope.Location.Type.OOP;
 import static one.helfy.vmstruct.scope.Location.Where.IN_REGISTER;
 import static one.helfy.vmstruct.scope.Location.Where.ON_STACK;
@@ -29,6 +31,7 @@ public class Location {
     private static int TYPE_INVALID = jvm.intConstant("Location::invalid");
     private static int WHERE_ON_STACK = jvm.intConstant("Location::on_stack");
     private static int WHERE_IN_REGISTER = jvm.intConstant("Location::in_register");
+    private static final int INT_SIZE = jvm.type("jint").size;
     private static final long _narrow_oop_base = jvm.getAddress(jvm.type("Universe").global("_narrow_oop._base"));
     private static final int _narrow_oop_shift = jvm.getInt(jvm.type("Universe").global("_narrow_oop._shift"));
 
@@ -47,6 +50,10 @@ public class Location {
         } else {
             throw new RuntimeException("should not reach here");
         }
+    }
+
+    public boolean isRegister() {
+        return ((this.value & WHERE_MASK) >> WHERE_SHIFT) == WHERE_IN_REGISTER;
     }
 
     public Location.Type getType() {
@@ -78,56 +85,47 @@ public class Location {
         return (short)((this.value & OFFSET_MASK) >> OFFSET_SHIFT);
     }
 
-    public Object toObject(long unextendedSP, long fp) {
-        Where where = getWhere();
+    public Object toObject(long unextendedSP, Map<Integer, Long> registers) {
         int type = (this.value & TYPE_MASK) >> TYPE_SHIFT;
+        if (type == TYPE_INVALID) {
+            return null;
+        }
+        Where where = getWhere();
+
         if (where == Where.ON_STACK) {
-            if (type == TYPE_OOP) {
-                long objAddr = jvm.getAddress(unextendedSP + 4 * getOffset());
-                JVM.ObjRef objRef = new JVM.ObjRef();
-                objRef.ptr = (int) ((objAddr - _narrow_oop_base) >> _narrow_oop_shift);
-                return jvm.getObject(objRef, jvm.fieldOffset(JVM.ObjRef.ptrField));
-            } else if (type == TYPE_NARROWOOP) {
-                long objAddr = jvm.getAddress(unextendedSP + 4 * getOffset());
-                JVM.ObjRef objRef = new JVM.ObjRef();
-                objRef.ptr = (int) (objAddr);
-                return jvm.getObject(objRef, jvm.fieldOffset(JVM.ObjRef.ptrField));
-            } else if (type == TYPE_NORMAL) {
-                // in 32-bit JVM normal also means half of double or half of long
-                int normalVal = jvm.getInt(unextendedSP + 4 * getOffset());
+            long locationAddress = unextendedSP + INT_SIZE * getOffset();
+            Object normalVal = getObjectInternal(type, locationAddress, false);
+            if (normalVal != null) {
                 return normalVal;
-            } else if (type == TYPE_DBL || type == TYPE_FLOAT_IN_DBL) {
-                long dblBits = jvm.getLong(unextendedSP + 4 * getOffset());
-                return Double.longBitsToDouble(dblBits);
-            } else if (type == TYPE_LNG || type == TYPE_INT_IN_LONG) {
-                return jvm.getLong(unextendedSP + 4 * getOffset());
             }
         } else {
-            if (getOffset() == 10) { // todo check address size and get real rbp
-                if (type == TYPE_OOP) {
-                    System.err.println("WOW REGISTER");
-                    long objAddr = fp;
-                    JVM.ObjRef objRef = new JVM.ObjRef();
-                    objRef.ptr = (int) ((objAddr - _narrow_oop_base) >> _narrow_oop_shift);
-                    return jvm.getObject(objRef, jvm.fieldOffset(JVM.ObjRef.ptrField));
+            int regNum = getOffset();
+            if (registers != null && registers.containsKey(regNum)) {
+                Object normalVal = getObjectInternal(type, registers.get(regNum), true);
+                if (normalVal != null) {
+                    return normalVal;
                 }
             }
         }
-        // todo OopMapSet, X86Frame#senderForCompiledFrame, CodeBlob#getOopMaps
-        /*
-                Address senderSP = this.getUnextendedSP().addOffsetTo(cb.getFrameSize());
-        Address senderPC = senderSP.getAddressAt(-1L * VM.getVM().getAddressSize());
-        Address savedFPAddr = senderSP.addOffsetTo(-2L * VM.getVM().getAddressSize());
-        if (map.getUpdateMap()) {
-            map.setIncludeArgumentOops(cb.callerMustGCArguments());
-            if (cb.getOopMaps() != null) {
-                OopMapSet.updateRegisterMap(this, cb, map, true);
-            }
-
-            this.updateMapWithSavedLink(map, savedFPAddr);
-        }
-         */
         return toString();
+    }
+
+    private Object getObjectInternal(int type, long locationAddress, boolean inRegister) {
+        if (type == TYPE_OOP) {
+            return JVM.Ptr2Obj.getFromPtr2Ptr(locationAddress);
+        } else if (type == TYPE_NARROWOOP) {
+            return JVM.Ptr2Obj.getFromPtr2NarrowPtr(locationAddress);
+        } else if (type == TYPE_NORMAL) {
+            // in 32-bit JVM normal also means half of double or half of long
+            int normalVal = jvm.getInt(locationAddress);
+            return normalVal;
+        } else if (type == TYPE_DBL || type == TYPE_FLOAT_IN_DBL) {
+            long dblBits = jvm.getLong(locationAddress);
+            return Double.longBitsToDouble(dblBits);
+        } else if (type == TYPE_LNG || type == TYPE_INT_IN_LONG) {
+            return jvm.getLong(locationAddress);
+        }
+        return null;
     }
 
     @Override

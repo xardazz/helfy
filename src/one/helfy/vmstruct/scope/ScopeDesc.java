@@ -63,7 +63,7 @@ public class ScopeDesc {
         } else {
             CompressedReadStream crs = new CompressedReadStream(NMethod.getScopesDataBegin(nmethod), decodeOffset);
             int length = crs.readInt();
-            List<Object> res = new ArrayList(length);
+            List<Object> res = new ArrayList<>(length);
             for(int i = 0; i < length; ++i) {
                 res.add(ScopeValue.readFrom(nmethod, crs));
             }

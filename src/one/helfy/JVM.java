@@ -238,15 +238,58 @@ public class JVM {
         }
     }
 
-    public static class ObjRef {
-        public static java.lang.reflect.Field ptrField;
+    /*
+     * This class was tested under permanent System.gc calls and doesn't seem to crash JVM due to object relocations
+     */
+    public static class Ptr2Obj {
+        private static JVM jvm = JVM.getInstance();
+        private static final long _narrow_oop_base = jvm.getAddress(jvm.type("Universe").global("_narrow_oop._base"));
+        private static final int _narrow_oop_shift = jvm.getInt(jvm.type("Universe").global("_narrow_oop._shift"));
+        private static long objFieldOffset;
         static {
             try {
-                ptrField = ObjRef.class.getDeclaredField("ptr");
+                java.lang.reflect.Field objField = Ptr2Obj.class.getDeclaredField("obj");
+                objFieldOffset = jvm.fieldOffset(objField);
             } catch (NoSuchFieldException e) {
-                throw new JVMException("Couldn't obtain ptr field of own class");
+                throw new JVMException("Couldn't obtain obj field of own class");
             }
         }
-        public int ptr;
+        private volatile Object obj;
+
+        public static Object getFromPtr2Ptr(long address) {
+            if (address == 0) {
+                return null;
+            }
+            Ptr2Obj ptr2Obj = new Ptr2Obj();
+            JVM.unsafe.compareAndSwapInt(ptr2Obj, objFieldOffset, 0, (int) ((jvm.getAddress(address) - _narrow_oop_base) >> _narrow_oop_shift));
+            return ptr2Obj.obj;
+        }
+
+        public static Object getFromPtr2NarrowPtr(long address) {
+            if (address == 0) {
+                return null;
+            }
+            Ptr2Obj ptr2Obj = new Ptr2Obj();
+            JVM.unsafe.compareAndSwapInt(ptr2Obj, objFieldOffset, 0, (int) jvm.getAddress(address));
+            return ptr2Obj.obj;
+        }
+
+        public static Object getFromPtr(long address) {
+            if (address == 0) {
+                return null;
+            }
+            Ptr2Obj ptr2Obj = new Ptr2Obj();
+            JVM.unsafe.compareAndSwapInt(ptr2Obj, objFieldOffset, 0, (int) ((address - _narrow_oop_base) >> _narrow_oop_shift));
+            return ptr2Obj.obj;
+        }
+
+        public static Object getFromNarrowPtr(long address) {
+            if (address == 0) {
+                return null;
+            }
+            Ptr2Obj ptr2Obj = new Ptr2Obj();
+            JVM.unsafe.compareAndSwapInt(ptr2Obj, objFieldOffset, 0, (int) address);
+            return ptr2Obj.obj;
+        }
     }
 }
