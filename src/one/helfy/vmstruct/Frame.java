@@ -1,6 +1,7 @@
 package one.helfy.vmstruct;
 
 import one.helfy.JVM;
+import one.helfy.JVMException;
 import one.helfy.Utils;
 import one.helfy.vmstruct.scope.PCDesc;
 import one.helfy.vmstruct.scope.ScopeDesc;
@@ -49,6 +50,10 @@ public abstract class Frame {
     }
 
     public static Frame getFrame(long sp, long unextendedSP, long fp, long pc, Map<Integer, Long> registers) {
+        String arch = System.getenv("PROCESSOR_ARCHITECTURE").toLowerCase();
+        if (arch.contains("sparc") || arch.contains("arm")) {
+            throw new JVMException("Unsupported architecture.");
+        }
         if (!Interpreter.contains(pc)) {
             long cb = CodeCache.findBlob(pc);
             if (cb != 0) {
