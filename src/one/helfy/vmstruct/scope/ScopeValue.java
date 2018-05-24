@@ -20,14 +20,6 @@ public class ScopeValue {
     static final int CONSTANT_OBJECT_CODE = 5;
     static final int CONSTANT_OBJECT_ID_CODE = 6;
 
-    private final Object value;
-    private final boolean isOop;
-
-    public ScopeValue(Object value, boolean isOop) {
-        this.value = value;
-        this.isOop = isOop;
-    }
-
     public static Object readFrom(long nmethod, CompressedReadStream crs) {
         int varType = crs.readInt();
         switch (varType) {
@@ -51,7 +43,7 @@ public class ScopeValue {
 
     }
 
-    private static Object readObject(long nmethod, CompressedReadStream crs) {
+    private static ObjectValue readObject(long nmethod, CompressedReadStream crs) {
         int id = crs.readInt();
         Object klass = readFrom(nmethod, crs);
         if (!(klass instanceof Long)) {

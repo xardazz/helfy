@@ -1,6 +1,7 @@
 package one.helfy.vmstruct;
 
 import one.helfy.JVM;
+import one.helfy.Utils;
 
 public class Method {
     private static final JVM jvm = JVM.getInstance();
@@ -173,15 +174,21 @@ public class Method {
             int bciStart = jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarBCIOffset) & 0xffff;
             int bciEnd = bciStart + jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarLength) & 0xffff;
             int slot = jvm.getShort(constMethod + offset + j * localVariableTableElementSize + localVarSlotOffset) & 0xffff;
+            if (frameBCI < bciStart || frameBCI >= bciEnd) {
+                // though it's possible to get value of variable that has BCI not within the frame BCI, but in some cases
+                // it can cause the crash due to var value handling based on var type
+                // imagine we have 2 vars at slot 15 and both of them aren't in frame BCI. We will return the first found
+                // if first found was an object, but later the slot is reused by int var it will lead to crash
+                // as we'll try to obtain an object from an int considering it a pointer
+                continue;
+            }
             if (slot >= result.length) {
                 LocalVar[] tmp = new LocalVar[slot + 1];
                 System.arraycopy(result, 0, tmp, 0, result.length);
                 result = tmp;
             }
             String fieldName = Symbol.asString(ConstantPool.at(cpool, nameOffset));
-            if (result[slot] == null || (frameBCI >= bciStart && frameBCI < bciEnd)) {
-                result[slot] = vmLocalVar2Readable(fieldName, Symbol.asString(ConstantPool.at(cpool, typeOffset)));
-            }
+            result[slot] = vmLocalVar2Readable(fieldName, Symbol.asString(ConstantPool.at(cpool, typeOffset)));
         }
 
         return result;
@@ -189,46 +196,54 @@ public class Method {
 
     public static LocalVar vmLocalVar2Readable(String fieldName, String vmType) {
         boolean isArray = vmType.startsWith("[");
+        int dim = -1;
+        final String dimPart;
         if (isArray) {
-            vmType = vmType.substring(1);
+            while (vmType.charAt(++dim) == '[') {
+            }
+            vmType = vmType.substring(dim);
+            dimPart = Utils.strRepeat("[]", dim);
+        } else {
+            dimPart = "";
         }
+
         if (vmType.startsWith("L")) {
             return new LocalVar(fieldName,
-                    vmType.replace('/', '.').substring(1, vmType.length() - 1) + (isArray ? "[]" : ""),
+                    vmType.replace('/', '.').substring(1, vmType.length() - 1) + dimPart,
                     isArray,
-                    false
+                    dim, false
             );
         }
         String readableType;
         switch (vmType) {
             case "I":
-                readableType = "int" + (isArray ? "[]" : "");
+                readableType = "int" + dimPart;
                 break;
             case "J":
-                readableType = "long" + (isArray ? "[]" : "");
+                readableType = "long" + dimPart;
                 break;
             case "S":
-                readableType = "short" + (isArray ? "[]" : "");
+                readableType = "short" + dimPart;
                 break;
             case "B":
-                readableType = "byte" + (isArray ? "[]" : "");
+                readableType = "byte" + dimPart;
                 break;
             case "D":
-                readableType = "double" + (isArray ? "[]" : "");
+                readableType = "double" + dimPart;
                 break;
             case "F":
-                readableType = "float" + (isArray ? "[]" : "");
+                readableType = "float" + dimPart;
                 break;
             case "Z":
-                readableType = "boolean" + (isArray ? "[]" : "");
+                readableType = "boolean" + dimPart;
                 break;
             case "C":
-                readableType = "char" + (isArray ? "[]" : "");
+                readableType = "char" + dimPart;
                 break;
             default:
                 readableType = "unknown";
         }
-        return new LocalVar(fieldName, readableType, isArray, true);
+        return new LocalVar(fieldName, readableType, isArray, dim, true);
     }
 
     public static int bcpToBci(long method, long bcp) {
@@ -240,12 +255,14 @@ public class Method {
         final String name;
         final String type;
         final boolean isArray;
+        final int dim;
         final boolean valueType;
 
-        private LocalVar(String name, String type, boolean isArray, boolean valueType) {
+        private LocalVar(String name, String type, boolean isArray, int dim, boolean valueType) {
             this.name = name;
             this.type = type;
             this.isArray = isArray;
+            this.dim = dim;
             this.valueType = valueType;
         }
 
@@ -263,6 +280,10 @@ public class Method {
 
         public boolean isValueType() {
             return valueType;
+        }
+
+        public int getDim() {
+            return dim;
         }
     }
 }

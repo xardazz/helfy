@@ -94,14 +94,14 @@ public class Location {
 
         if (where == Where.ON_STACK) {
             long locationAddress = unextendedSP + INT_SIZE * getOffset();
-            Object normalVal = getObjectInternal(type, locationAddress, false);
+            Object normalVal = getObjectInternal(type, locationAddress);
             if (normalVal != null) {
                 return normalVal;
             }
         } else {
             int regNum = getOffset();
             if (registers != null && registers.containsKey(regNum)) {
-                Object normalVal = getObjectInternal(type, registers.get(regNum), true);
+                Object normalVal = getObjectInternal(type, registers.get(regNum));
                 if (normalVal != null) {
                     return normalVal;
                 }
@@ -110,7 +110,7 @@ public class Location {
         return toString();
     }
 
-    private Object getObjectInternal(int type, long locationAddress, boolean inRegister) {
+    private Object getObjectInternal(int type, long locationAddress) {
         if (type == TYPE_OOP) {
             return JVM.Ptr2Obj.getFromPtr2Ptr(locationAddress);
         } else if (type == TYPE_NARROWOOP) {

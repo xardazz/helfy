@@ -28,7 +28,7 @@ public class VFrame extends X86Frame {
         this.scopeDesc = scopeDesc;
     }
 
-    public VFrame(X86Frame frame, ScopeDesc scopeDesc) {
+    public VFrame(Frame frame, ScopeDesc scopeDesc) {
         this(frame.sp, frame.unextendedSP, frame.fp, frame.pc, frame.registers, scopeDesc);
     }
 
@@ -44,7 +44,7 @@ public class VFrame extends X86Frame {
     }
 
     @Override
-    public X86Frame sender() {
+    public Frame sender() {
         ScopeDesc sender = scopeDesc.sender();
         if (sender != null) {
             return new VFrame(this.sp, this.unextendedSP, this.fp, this.pc, this.registers, sender);
@@ -101,7 +101,7 @@ public class VFrame extends X86Frame {
                         secondPart = secondPartRaw;
                     }
                 }
-                strVal = compiledVar2String(0, localVar, secondPart);
+                strVal = compiledVar2String(localVal, localVar, secondPart);
             } else {
                 strVal = String.valueOf(localVal);
             }
@@ -119,7 +119,7 @@ public class VFrame extends X86Frame {
         }
         if (localVar != null) {
             if (localVar.isArray) {
-                return Utils.getArrayAsString(obj, localVar.valueType, localVar.type);
+                return Utils.getArrayAsString(obj, localVar.valueType, localVar.type, localVar.dim);
             } else if (localVar.type.equals("float")) {
                 return String.valueOf(Float.intBitsToFloat((int) obj));
             } else if (localVar.type.equals("boolean")) {
@@ -140,36 +140,81 @@ public class VFrame extends X86Frame {
                 return String.valueOf(obj);
             }
         } else {
-            Class<?> objClass = obj.getClass();
-            if (objClass == byte[].class) {
-                return Arrays.toString((byte[]) obj);
-            } else if (objClass == short[].class) {
-                return Arrays.toString((short[]) obj);
-            } else if (objClass == int[].class) {
-                return Arrays.toString((int[]) obj);
-            } else if (objClass == long[].class) {
-                return Arrays.toString((long[]) obj);
-            } else if (objClass == char[].class) {
-                return Arrays.toString((char[]) obj);
-            } else if (objClass == float[].class) {
-                return Arrays.toString((float[]) obj);
-            } else if (objClass == double[].class) {
-                return Arrays.toString((double[]) obj);
-            } else if (objClass == boolean[].class) {
-                return Arrays.toString((boolean[]) obj);
-            } else if (objClass.isArray()) {
-                return Arrays.deepToString((Object[]) obj);
-            } else {
-                return String.valueOf(obj);
-            }
+            return Utils.unknownObject2String(obj);
         }
     }
 
-    private Object compiledVar2Object(Object obj, Method.LocalVar localVar) {
+    protected Object[] getLocalsWithValues(int maxLocals, Method.LocalVar[] vars) {
+        Object[] varValues = new Object[maxLocals];
+        List<Object> localValues = scopeDesc.locals();
+        for (int i = 0; i < maxLocals; i++) {
+            Object localVarVal = localValues.get(i);
+            boolean skipNext = false;
+            Method.LocalVar localVar = vars.length > 0 && i < vars.length ? vars[i] : null;
+            boolean longOrDouble = localVar != null && (localVar.type.equals("long") || localVar.type.equals("double")) && (i + 1) < maxLocals;
+            if (localVarVal == null) {
+                varValues[i] = null;
+            } else if (localVarVal instanceof Location) {
+                Location location = (Location) localVarVal;
+                Object obj = location.toObject(unextendedSP, registers);
+                Object secondPart = null;
+
+                if (longOrDouble) {
+                    skipNext = true;
+                    // if one part of long or double is location, second part will also be location
+                    Location secondPartLocation = (Location) localValues.get(i + 1);
+                    secondPart = secondPartLocation.toObject(unextendedSP, registers);
+                    varValues[i] = exportLocalVarValue(localVarVal, localVar, secondPart);
+                    varValues[i + 1] = varValues[i];
+                } else {
+                    varValues[i] = exportLocalVarValue(obj, localVar, null);
+                }
+            } else if (localVarVal instanceof Integer) {
+                Object secondPart = null;
+                if (localVar != null && localVarVal.equals(0) && longOrDouble) {
+                    skipNext = true;
+                    // if one part of long or double is 0 int, second part will be location or long
+                    Object secondPartRaw = localValues.get(i + 1);
+                    if (secondPartRaw instanceof Location) {
+                        Location secondPartLocation = (Location) secondPartRaw;
+                        secondPart = secondPartLocation.toObject(unextendedSP, registers);
+                    } else {
+                        secondPart = secondPartRaw;
+                    }
+                }
+                varValues[i] = exportLocalVarValue(localVarVal, localVar, secondPart);
+                if (secondPart != null) {
+                    varValues[i + 1] = varValues[i];
+                }
+            } else {
+                varValues[i] = localVarVal;
+            }
+
+            if (skipNext) i++;
+        }
+        return varValues;
+    }
+
+    protected Object exportLocalVarValue(Object obj, Method.LocalVar localVar, Object secondPart) {
+        if (localVar == null) {
+            return obj;
+        }
         if (localVar.type.equals("float")) {
             return Float.intBitsToFloat((int) obj);
         } else if (localVar.type.equals("boolean")) {
             return (int) obj == 1;
+        } else if (localVar.type.equals("long") || localVar.type.equals("double")) {
+            if (wordSize == 8) {
+                return obj.equals(0) ? String.valueOf(secondPart) : String.valueOf(obj);
+            }
+            long bits = (((Integer) secondPart).longValue() & 0xffffffffL) + ((((Integer) obj).longValue() << 32L) & 0xffffffff00000000L);
+            if (localVar.type.equals("long")) {
+                return bits;
+            } else {
+                return Double.longBitsToDouble(bits);
+            }
+        } else if (localVar.type.equals("char")) {
+            return (char) ((Integer) obj).intValue();
         }
         return obj;
     }
